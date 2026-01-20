@@ -1,0 +1,31 @@
+{
+    "modulename": "fuseps",
+    "releasetype": "public",
+    "gituser": "sgkens",
+    "gitgroup": "phellams",
+    "gitlabid": "",
+    "gitlabid_public": "77419357",
+    "license": "MIT",
+    "iconurl": "https://raw.githubusercontent.com/phellams/phellams-general-resources/main/logos/fuseps/dist/png/fuseps-128x128.png",
+    "phwriter": true,
+    "phwriter_source": "https://gitlab.com/phellams#function-reference",
+    "pester_test_files": [
+        ".\\*.psm1"
+    ],
+    "psmcompiler": {
+        "ModuleName": "fuseps",
+        "SourcePath": "./src",
+        "DistPath": "./dist",
+        "VersionStrategy": "GitAuto",
+        "Options": {
+            "StripComments": false,
+            "AutoExport": true
+        },
+        "CopyPaths": [
+            "LICENSE",
+            "README.md",
+            "icon.png",
+            "docs/"
+        ]
+    }
+}
