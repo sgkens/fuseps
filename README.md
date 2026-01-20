@@ -1,93 +1,177 @@
-# anvil
+# **FusePS**
 
+Zero-Overhead Compilation for High-Performance Modules.
 
+**FusePS** is a PowerShell Module Bundler. It takes a development environment consisting of scattered functions, classes, and assemblies, and "fuses" them into a single, high-performance artifact (`.psm1`) optimized for fast loading and easy distribution.
 
-## Getting started
+It is not a transpiler. It is a static analysis and bundling engine that enforces industry-standard architecture while eliminating the runtime cost of dot-sourcing files.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## **Core Features**
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+* **Single-File Artifacts**: Compiles hundreds of `.ps1` files into one `.psm1`, reducing module load time by up to 90%.
+* **Smart Scoping & Exports**: Automatically detects `FunctionsToExport` and `AliasesToExport` (via `[Alias()]` attributes). It intelligently ignores private functions (prefixed with `_`) and nested helper functions, ensuring only your public API is exposed.
+* **Namespace Hoisting**: Scans all source files for `using namespace` statements and automatically hoists them to the top of the compiled artifact, preventing syntax errors in merged files.
+* **Surgical Manifest Updates**: Updates your `.psd1` manifest using AST splicing. This allows it to update version numbers and export lists while guaranteeing that your **comments and custom formatting are preserved 100%**.
+* **Smart DLL Injection**: Drop `.dll` files into `src/Assemblies`. FusePS creates a `bin/` folder in the output and injects a loader at the top of your module automatically.
+* **Visual Build Logs**: Features a high-contrast, ANSI 256-color logging system with distinct badges for status updates, errors, and git operations.
+* **Syntax Safety**: Performs a full AST syntax check on the compiled code before saving. It will never overwrite a valid build with broken code.
+* **Asset Mirroring**: Automatically copies `src/Data` and configured assets (Licenses, Readmes) to the distribution folder.
 
-## Add your files
+## **Project Structure**
 
-* [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+FusePS relies on a specific "**Convention over Configuration**" directory layout.
+
+```text
+MyProject/
+├── build.ps1                 # The Bootstrapper (Entry point)
+├── build_config.json         # Build Configuration
+├── src/
+│   ├── MyModule.psd1         # Manifest Template
+│   ├── Classes/              # [Optional] PowerShell Classes & Enums (Loaded 1st)
+│   ├── Assemblies/           # [Optional] C# .dll files (Loaded 0th)
+│   ├── Private/              # [Optional] Internal Helper Functions
+│   ├── Public/               # [Required] Exported Functions
+│   └── Data/                 # [Optional] JSON/XML/Assets (Copied to dist)
+└── dist/                     # [Generated] Final Build Artifacts
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/phellams/anvil.git
-git branch -M main
-git push -uf origin main
+> Note: Files in `Classes/`, `Private/`, and `Public/` are sorted alphabetically before merging. If **Class B** depends on **Class A**, name them **01_ClassA.ps1** and **02_ClassB.ps1**.
+
+---
+
+## Configuration (`build_config.json`)
+
+Create a `build_config.json` in your project root.
+
+```json
+{
+    "psmcompiler": {
+        "ModuleName": "MyModule",
+        "SourcePath": "./src",
+        "DistPath": "./dist",
+        "VersionStrategy": "GitAuto",
+        "Options": {
+            "StripComments": false,
+            "RegionSeparators": true,
+            "AutoExport": true
+        },
+        "CopyPaths": [
+            "LICENSE",
+            "README.md",
+            "docs/"
+        ]
+    }
+}
+
 ```
 
-## Integrate with your tools
+### Configuration Key Reference
 
-* [Set up project integrations](https://gitlab.com/phellams/anvil/-/settings/integrations)
+| Key  | Description
+|---|---|
+|*ModuleName*| The name of the module (Must match `.psd1` filename). |
+|*VersionStrategy*| SemVer Auto Version or `Manual` (Reads from manifest). |
+|*CopyPaths*| Array of file/folder paths (relative to root) to copy to `dist/.` |
+|*RegionSeparators*| Adds `# ____/[ Region ]____` headers to the compiled file for readability. |
 
-## Collaborate with your team
 
-* [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
 
-## Test and Deploy
+## **Usage Workflow**
 
-Use the built-in continuous integration in GitLab.
+1️⃣ ***The Bootstrapper***
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+FusePS is designed to build itself. You do not need the module installed to run the build. Use the provided build.ps1 script to shim the compiler into memory.
 
-***
+> **RUN**: `build.ps1`
 
-# Editing this README
+```Powershell
+# build.ps1
+param($Task = "Build")
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+$Root = $PSScriptRoot
 
-## Suggestions for a good README
+# 1. BOOTSTRAP: Load the compiler's own logic into memory
+#    This bypasses the need for the module to be installed.
+$Source = Join-Path $Root "src"
+. (Join-Path $Source "private/Write-Logr.ps1")      # Load Logger first
+. (Join-Path $Source "private/kvinc.ps1")           # Load the AST Helper above
+. (Join-Path $Source "public/Invoke-FusePS.ps1")    # Load the Compiler/Builder
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+# 2. RUN
+if ($Task -eq "Build") {
+    Invoke-PsmCompile -ProjectPath $Root
+}
+```
 
-## Name
-Choose a self-explaining name for your project.
+2️⃣ ***The Development Loop (Dev Mode)***
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```powershell
+# Run this in your console to load the "Raw" module for testing
+$Root = "C:\Projects\MyModule"
+Get-ChildItem "$Root/src/Classes/*.ps1" | ForEach { . $_.FullName }
+Get-ChildItem "$Root/src/Private/*.ps1" | ForEach { . $_.FullName }
+Get-ChildItem "$Root/src/Public/*.ps1"  | ForEach { . $_.FullName }
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Do not build the module every time you change a line of code. Use a "Dev Loader" snippet in your profile or test script to load the raw source files into memory instantly.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+3️⃣ ***The Release Loop (Build Mode)***
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+When you are ready to ship, push, or verify:
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+1. Run `./build.ps1`.
+2. Inspect the `dist/MyModule` folder.
+3. Test the artifact in a fresh **PowerShell** session:
+    ```powershell
+    pwsh -NoProfile -Command "Import-Module ./dist/MyModule/MyModule.psd1; Get-Help Get-MyFunction"
+    ```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## **Advanced Features**
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+**C# Assemblies** (`src/Assemblies`)
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+If your module relies on compiled **C#** code:
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+1. Place your `.dll` files in `src/Assemblies/`.
+2. **FusePS Action**:
+    1. Creates `dist/MyModule/bin/`.
+    2. Copies the **DLLs** there.
+    3. Injects `Add-Type -Path "$PSScriptRoot/bin/MyLib.dll"` at the very top of your compiled `.psm1`.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+**Data & Assets** (`src/Data`)
 
-## License
-For open source projects, say how it is licensed.
+If your module needs to read **JSON** configuration or templates at runtime:
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+1. Place files in `src/Data/`.
+2. FusePS Action: Copies the folder to `dist/MyModule/Data/`.
+3. **Accessing it in code**:
+    ```powershell
+    $Config = Get-Content (Join-Path $PSScriptRoot "Data/config.json") | ConvertFrom-Json
+    ```
+## **Technical Notes**
+
+- **Load Order**:
+    1. Assemblies (DLLs)
+    2. Classes & Enums
+    3. Private Functions
+    4. Public Functions
+
+- **Manifest Updates**: FusePS uses the AST to locate the FunctionsToExport hashtable key. If your manifest is missing this key, the auto-export feature will skip the update (and warn you).
+
+- **Aliases**: FusePS scans for [Alias('Name')] attributes on your functions and automatically adds them to AliasesToExport in the manifest.
+
+
+## How to handle Dependencies
+
+If you have a shared library (e.g., `Logr`), do not copy-paste code.
+
+1. **Repo Structure:** Keep `Logr` in a separate repo or a `libs/` folder.
+2. **Symlink (Advanced):** Symlink the file into `src/Private/`.
+3. **Injector (FusePS V2 Feature):** Eventually add a `Libraries` array to `build_config.json` that FusePS reads and injects text content from external paths directly into the build stream.
+
+## Troubleshooting
+
+* **Syntax Errors:** FusePS parses the final string before saving. If you miss a closing bracket `}` in one file, the build will fail and tell you.
+* **Missing Exports:** Ensure your public functions are in `src/Public`. FusePS only auto-exports functions found in that folder.
+* **Class Order:** If `Class B` uses `Class A`, rename the files: `src/Classes/01_ClassA.ps1`, `src/Classes/02_ClassB.ps1`. FusePS sorts alphabetically.
