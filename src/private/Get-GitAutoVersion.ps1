@@ -1,0 +1,1 @@
+G:/devspace/projects/powershell/_repos/fuseps/phellams-utils/helpers/semver/Get-GitAutoVersion.ps1
